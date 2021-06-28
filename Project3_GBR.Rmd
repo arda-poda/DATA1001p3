@@ -1,0 +1,467 @@
+---
+title: "Water Quality in the Great Barrier Reef"
+author: "SID 510098984"
+subtitle: "Project 3"
+date: "University of Sydney | DATA1001 | April 2020"
+output:
+  html_document:
+    fig_caption: yes
+    number_sections: yes
+    self_contained: yes
+    theme: flatly
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    code_folding: hide
+    df_print: paged
+---
+
+  
+
+# Recommendaton
+
+  
+1) Shift the tourism business model to non-aquatic fields to compensate for the lower water clarity.
+  
+2) Buy insurance in case of more common plankton blooms or shift business months to winter. 
+  
+
+# Evidence
+
+## IDA
+
+```{r, cache=TRUE}
+gbr = read.csv("GBR.csv")
+```
+
+```{r, message = FALSE }
+library(ggplot2)
+library("dplyr")
+library(lubridate)
+library(plotly)
+set.seed(42)
+# Quick snapshot
+##plot(gbr)
+##str(gbr)
+
+#Information from the source
+###
+##STATION_NAME = Name of the station 
+##CHL_A = Concentration of chlorophyll a (µg/l); 
+##SALINITY = Salinity (parts per thousand); 
+##TEMPERATURE = Temperature of the water sample (C)
+##TRICHODESMIUM = Is Trichodesmium present?
+##SECCHI_DEPTH NUMBER 5,2 Depth at which the secchi disk is no longer visible (m) (thus an indicator of visibility)
+##ACOUSTIC_DEPTH NUMBER 3 Depth of the water at the station (m)
+##SAMPLE_TIME Time sampling commenced (hhmm)
+##TRANSECT = location 
+
+#names that are easier to work with
+mynames <- c("sName",
+               "Trans",
+               "sID",
+               "Time",
+               "Lat",
+               "Long",
+               "secDepth",
+               "aDepth",
+               "repDesc",
+               "Temp",
+               "Sal",
+               "Depth",
+               "Chl",
+               "Tricho")
+names(gbr) <- mynames
+
+#our new variables
+gbr <- gbr %>% 
+  mutate(logC = log(Chl)) %>% 
+  mutate(Time = dmy_hm(Time)) %>%
+  mutate(Tricho = recode(Tricho, "a" = "Absent", "A" = "Absent", "p" = "Present", "P" = "Present"))%>%
+  mutate(logSdepth = log(secDepth))
+```
+
+Our significance level is $\alpha$ <0.05
+
+
+A look at the data set:
+  
+Overall:
+```{r}
+
+summary(gbr)
+```
+  
+The correlations: 
+
+```{r}
+gbr %>% filter( !is.na(secDepth),!is.na(aDepth), !is.na(Temp), !is.na(Sal), !is.na(Depth), !is.na(Chl), !is.na(logSdepth), logSdepth > 0 ) %>%
+  select(secDepth, aDepth, Temp, Sal, Depth, Chl, logC, logSdepth) %>%
+  cor()
+```
+Nothing particularly strongly correlated (unless by definition)
+
+
+
+### Relationship of Trichodesmium and Chlorophyll concentration
+
+
+Chlorophyll A is used as a proxy indicator for plankton biomass (Australian Institute of Marine 2021).
+  
+We should test this assumption. Since the presence of a phytoplankton, in this case Trichodesmium, would boost plankton biomass, we would expect there to be higher Chlorophyll A concentrations when Trichodesmium is present. 
+
+
+$H_0$ = Trichodesmium will not effect average Chlorophyll A concentration.    
+$H_1$ = Trichodesmium will change the  average Chlorophyll A concentration. 
+
+Assumptions:
+  
+1) Presence of Trichodesmium does not reduce the abundance of other plankton, which could decrease Chlorophyll A concentrations.
+  
+2) The two samples are independent. 
+  
+3) The populations are normal. 
+  
+
+```{r}
+#cleaning up
+Tpresent <- gbr%>% filter(!is.na(logC),
+                          Tricho == "Present")
+Tabsent <-  gbr%>% filter(!is.na(logC),
+                          Tricho == "Absent")
+```
+
+```{r}
+#central values of the data
+pmed = median(Tpresent$logC)
+amed = median(Tabsent$logC)
+pmean = mean(Tpresent$logC)
+amean = mean(Tabsent$logC)
+```
+
+
+
+
+Trichodesmium | Mean Chlorophyll A Concentration (ln($\mu$g/L)) | Median Chlorophyll A Concentration (ln($\mu$g/L))
+------------- | ------------- |----------
+Present |`r round(pmean, digits = 4)`|`r round(pmed, digits = 4)`
+Absent  |`r round(amean, digits = 4)`|`r round(amed, digits = 4)`
+
+
+
+
+
+
+Test for significance: 
+  
+Testing our assumption for normality: 
+```{r}
+tsamplePres = sample(Tpresent$logC, 2000, replace = F)
+tsampleAbse =  sample(Tabsent$logC, 2000, replace = F)
+shapiro.test(tsamplePres)
+shapiro.test(tsampleAbse)
+```
+Since they are not normal, we need to do a nonparametric test, in this case Mann-Whitney U test.
+ 
+$H_0$ = The medians of the population with Trichodesmium present will be the same as the one without. 
+ 
+$H_1$ = The medians will not be equal. 
+
+Assumptions: 
+
+1) They are independent populations.
+
+2) They are the same shape.
+
+```{r}
+ggplot(Tpresent, aes(logC, y = ..density..)) +
+  geom_histogram(bins = 50, fill = "grey", colour = "black") +
+  xlab("Chloropyhll A Concentration (ln(\u03bcg/L))") + ylab("") +
+  ggtitle("Chlorophyll A Concentrations when Trichodesmium is Present")
+
+
+
+ggplot(Tabsent, aes(logC, y = ..density..)) +
+  geom_histogram(bins = 50, fill = "grey", colour = "black") +
+  xlab("Chloropyhll A Concentration (ln(\u03bcg/L))") + ylab("")+ 
+  ggtitle("Chlorophyll A Concentrations when Trichodesmium is Absent")
+```
+  
+The shapes are similar, so the test can be made. 
+
+```{r}
+wilcox.test(Tpresent$logC, Tabsent$logC)
+```
+We can conclude that Trichodesmium occurs at higher median Chlorophyll A concentrations, with a significant (p << 0.01) difference in median concentrations. 
+
+Considering the sample size, we could also do a T-test, since the Central limit theorem would also hold. 
+
+```{r}
+var.test(Tpresent$logC, Tabsent$logC)
+test1 = t.test(Tpresent$logC, Tabsent$logC, var.equal = F)
+test1
+```
+We can conclude that Trichodesmium occurs at higher mean Chlorophyll A concentrations, with p << 0.01. 
+
+So, in conclusion, our assumption of the link between Chlorophyll A concentrations and Trichodesmium abundance holds true.
+  
+## Do the Chlorophyll A concentrations change over time?
+ 
+  
+A link between Chlorophyll A concentrations and time would also imply the same in terms of abundance of phytoplankton. 
+```{r}
+#Chlorophyll vs time
+tichl <- gbr %>%
+  filter(!is.na(Time), !is.na(logC))%>% 
+  group_by(years = year(Time)) %>% 
+  summarise(meanc = mean(logC))
+
+
+ggplot(tichl, aes(years, meanc)) +
+  geom_point(colour = "dark green") +
+  geom_smooth(method = lm, se = F, formula = y~x, colour = "dark green") +
+  xlab("Years") + ylab("Average Chloropyhll A Concentration (ln(\u03bcg/L)")
+```
+  
+A linear model may be appropriate. 
+
+```{r}
+TC <- lm(data = tichl, meanc ~ years)
+summary(TC)
+```
+It seems somewhat appropriate with p = `r round(summary(TC)$coefficients[2,4], digits = 3)` and R^2^ = `r round(summary(TC)$r.squared, digits = 3)`. The correlation is not very strong. 
+
+We need to check the other assumptions.
+
+```{r}
+ggplot(TC) + 
+  geom_point(aes(x=.fitted, y=.resid))+
+  geom_smooth(aes(x=.fitted, y=.resid), 
+              method = lm, 
+              formula = y~x,
+              se = F)+
+  geom_abline(slope = 0, colour = "grey", alpha = 0.8)+
+  ylab("Residuals") + xlab("Fitted Values") + ggtitle("Residual Plot")
+plot(TC, which = 2)
+```
+
+The residuals are random and homoscedastic, the QQplot is mostly linear. The linear model is serviceable. 
+
+Model: 
+  
+y = `r summary(TC)$coefficients[2,1]`x + `r summary(TC)$coefficients[1,1]`
+
+```{r}
+mchlr <- gbr %>%
+  filter(!is.na(Time), !is.na(logC)) %>%
+  group_by(months = month(Time)) %>%
+  summarise(mMonthlogC = mean(logC))
+
+ggplot(mchlr, aes(months, mMonthlogC))+
+  geom_point(colour = "dark green" )+
+  geom_smooth(method = lm, formula = y~poly(x, 5),
+              colour = "black", linetype = "dashed", se = F )+
+  xlab("Months") + ylab("Average Chloropyhll A Concentration (ln(\u03bcg/L)") +
+  ggtitle("Monthly Variation in the Chloropyll A Concentration")
+```
+The line of best fit is to emphasize the seasonal nature of the concentrations, rather than be a full model. The variability means insurance is more necessary, while the a winter oriented business model would be less affected by the plankton.  
+  
+## Measures for Water Quality
+
+A lower Secchi depth means the disk disappears more quickly, thus the water is murkier.
+  
+### Does the presence of Trichodesmium affect water quality? 
+```{r}
+#visibility
+visi <- gbr %>%
+  filter(!is.na(secDepth), !is.na(logC), secDepth > 0) %>%
+  filter( !is.na(logSdepth))
+ #>0 since secdept <= 0 would mean the disk would be not visible on the surface, which is unreasonable. 
+
+
+TVis = visi %>% filter(Tricho == "Present")
+TaVis = visi %>% filter(Tricho == "Absent")
+#median secci depths based on trichodesmium 
+TVisMed = median(TVis$logSdepth)
+TaVisMed = median(TaVis$logSdepth)
+```
+
+Is our data normal? 
+```{r}
+#assumption for normality
+shapiro.test(TVis$secDepth)
+shapiro.test(sample(TaVis$secDepth, 5000, replace = F)) 
+
+```
+Since it is not, we need to look at medians. 
+
+Results: 
+
+Trichodesmium | Median Secchi Depth (ln(m)) | 
+------------- | ------------- |
+Present |`r round(TVisMed, digits = 4)`|
+Absent  |`r round(TaVisMed, digits = 4)`|
+
+Test for significance: 
+Since our data is not normal, a Mann-Whitney U test is appropriate. 
+
+$H_0$ = The median Secchi depth will not change depending on the presence of Trichodesium.  
+$H_1$ = The medians are different. 
+
+Assumptions: 
+  
+1) The data is independent.
+  
+2) The 2 sets have a similar shape.
+  
+```{r}
+#shape
+ggplot(TVis, aes(logSdepth, y = ..density..)) +
+  geom_histogram(bins = 20, fill = "grey", colour = "black")+
+  xlab("Secchi Depth (ln(m))") + ylab("")+
+  ggtitle("Secchi Depth when Trichodesmium is Present")
+ggplot(TaVis, aes(logSdepth, y  = ..density..)) +
+  geom_histogram(bins = 20, fill = "grey", colour = "black")+
+  xlab("Secchi Depth (ln(m))") + ylab("")+
+  ggtitle("Secchi Depth when Trichodesmium is Absent")
+```
+
+The shapes are mostly similar. 
+
+The test: 
+```{r}
+wilcox.test(TVis$logSdepth, TaVis$logSdepth)
+```
+
+The difference is significant (p << 0.01) so we reject $H_0$. This means Trichodesmium positively affects water quality, an unexpected result. Is this true for other plankton as well?  
+  
+### What is the relationship between water clarity and Chlorophyll Concentration
+
+Through this we could further establish a possible causal relationship. 
+    
+```{r}
+ggplot(visi, aes(logSdepth, logC))+
+  geom_point()+
+  geom_smooth(method = lm, formula = y~x)+
+  xlab("Secchi Depth (ln(m))") + ylab("Chloropyhll A Concentration (ln(\u03bcg/L)")
+
+```
+
+A linear model seems appropriate. 
+
+```{r}
+CD <- lm(logC ~ logSdepth, data = visi)
+summary(CD)
+```
+
+The linear model is not bad, the slope is significant (p << 0.01), and the correlation is not bad R^2^ = `r round(summary(CD)$r.squared, digits = 3)`. 
+
+```{r}
+ggplot(CD) + 
+  geom_point(aes(x=.fitted, y=.resid))+
+  geom_smooth(aes(x=.fitted, y=.resid),
+              method = lm,
+              formula = y ~x ,
+              se = F)+
+  geom_abline(slope = 0, colour = "grey", alpha = 0.8)+
+  ylab("Residuals") + xlab("Fitted Values") + ggtitle("Residual Plot")
+```
+
+Since the residuals are mostly random and homoscedastic, the model is not a bad fit. 
+
+y = `r summary(CD)$coefficients[2,1]`x + `r summary(CD)$coefficients[1,1]`
+
+
+### Does water quality change over time? 
+
+```{r}
+#secc v Time
+
+#cleaning
+tclear <- gbr %>%
+  filter(!is.na(Time), !is.na(secDepth), !secDepth == 0)%>% 
+  group_by(years = year(Time)) %>% 
+  summarise(meansdepth = mean(secDepth))
+
+
+ggplot(tclear, aes(years, meansdepth)) +
+  geom_point() +
+  geom_smooth(method = lm, formula =y~x, se =F) +
+  ylab("Average Secchi Depth (m)") + xlab("Years")
+
+```
+  
+The linear model seems appropriate.
+  
+```{r}
+TSlm <- lm(meansdepth  ~years, data = tclear)
+summary(TSlm)
+
+```
+
+The linear model fits really well (R^2^ =`r round(summary(TSlm)$r.squared, digits = 3)`). and is significant (p << 0.01). 
+
+```{r}
+#residuals
+ggplot(TSlm) + 
+  geom_point(aes(x=.fitted, y=.resid))+
+  geom_smooth(aes(x=.fitted, y=.resid),
+              method = lm,
+              formula = y~x,
+              se = F)+
+  geom_abline(slope = 0, colour = "grey", alpha = 0.8)+
+  ylab("Residuals") + xlab("Fitted Values") + ggtitle("Residual Plot")
+plot(TSlm, which = 2)
+
+```
+
+However, the linear model is not very appropriate since the residual plot is not random, and it violates our assumption of normality. However, it should still be useful in showing the significant (p << 0.01) negative  trend even if it would be an imperfect predictor. 
+  
+  
+  
+A polynomial model is a better fit:
+```{r}
+
+
+TSpoly <- lm(meansdepth ~ years + I(years^2) +I(years^5), data = tclear)
+cool <-ggplot(tclear, aes(years, meansdepth)) +
+  geom_point() +
+  geom_smooth(method = lm,
+              formula = y~ x + I(x^2)+I(x^5),
+              se = F) +
+  ylab("Average Secchi Depth (m)") + xlab("Years")
+
+
+ggplotly(cool) 
+```
+
+
+```{r}
+summary(TSpoly)
+```
+R^2^ = `r round(summary(TSpoly)$r.squared, digits = 3)` shows a better fit. However, since the coefficients are insignificant (although marginally), its ability to predict is limited. However, the polynomial's residual and QQ plots are better, with the former being random and the latter linear. 
+  
+Neither model is sufficient, but that doesn't change our conclusion. There is a clear downward trend in both. However, the polynomial could indicate a faster decrease in water quality than would have been predicted by the linear model. 
+
+```{r}
+#residuals
+ggplot(TSpoly) + 
+  geom_point(aes(x=.fitted, y=.resid))+
+  geom_smooth(aes(x=.fitted, y=.resid),
+              method = lm,
+              formula = y~x, 
+              se = F)+
+  geom_abline(slope = 0, colour = "grey", alpha = 0.8)+
+  ylab("Residuals") + xlab("Fitted Values") + ggtitle("Residual Plot")
+
+
+
+plot(TSpoly, which = 2)
+```
+
+
+
+
+# References
+Australian Institute of Marine, S. (2021). The Great Barrier Reef Long-term Chlorophyll Monitoring (1992-2009) Australian Institute of Marine Science (AIMS). http://data.aims.gov.au/metadataviewer/faces/view.xhtml?uuid=eb16c150-c7b4-11dc-b99b-00008a07204e, https://researchdata.edu.au/great-barrier-reef-1992-2009 
+  
